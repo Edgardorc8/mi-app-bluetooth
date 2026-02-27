@@ -1,13 +1,12 @@
 name: Compilar APK de Kivy
 
-# Esto hace que el bot trabaje cada vez que modificas un archivo
 on:
   push:
     branches: [ main ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 
 
     steps:
       - name: Descargar el código
@@ -26,7 +25,6 @@ jobs:
 
       - name: Compilar la App a APK
         run: |
-          # El comando "yes" acepta automáticamente las licencias de Android
           yes | buildozer android debug
 
       - name: Guardar y subir el APK
