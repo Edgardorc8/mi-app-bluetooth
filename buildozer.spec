@@ -10,10 +10,11 @@ android.permissions = BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_CONNECT, BLUETOOTH_S
 android.api = 33
 android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
+orientation = portrait
 
 [buildozer]
 log_level = 2
-orientation = portrait
 warn_on_root = 1
+
 
 
