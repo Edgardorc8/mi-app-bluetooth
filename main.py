@@ -5,7 +5,7 @@ from kivy.clock import Clock
 from kivy.utils import platform
 from kivymd.app import MDApp
 from kivymd.uix.list import TwoLineListItem
-from kivymd.toast import toast # Importamos las notificaciones nativas de Android
+from kivymd.toast import toast
 
 if platform == 'android':
     from android.permissions import request_permissions, Permission
@@ -92,7 +92,6 @@ class AplicacionBluetooth(MDApp):
         return self.pantalla
 
     def mostrar_mensaje(self, texto):
-        # Muestra una notificación tipo burbuja en Android
         if platform == 'android':
             toast(texto)
         self.actualizar_estado(texto)
@@ -137,10 +136,13 @@ class AplicacionBluetooth(MDApp):
                 return
                 
             for dispositivo in dispositivos:
+                # EXTRAEMOS MAC Y NOMBRE COMO TEXTO SIMPLE PARA EVITAR CRASH DE MEMORIA
+                mac_dispositivo = dispositivo.getAddress()
+                nombre_dispositivo = dispositivo.getName()
                 item = TwoLineListItem(
-                    text=dispositivo.getName(),
-                    secondary_text=dispositivo.getAddress(),
-                    on_release=lambda x, d=dispositivo: self.iniciar_conexion(d)
+                    text=nombre_dispositivo,
+                    secondary_text=mac_dispositivo,
+                    on_release=lambda x, mac=mac_dispositivo, nom=nombre_dispositivo: self.iniciar_conexion(mac, nom)
                 )
                 self.pantalla.ids.lista_dispositivos.add_widget(item)
                 
@@ -148,29 +150,34 @@ class AplicacionBluetooth(MDApp):
         except Exception as error:
             self.mostrar_mensaje(f"Fallo al escanear: {str(error)}")
 
-    def iniciar_conexion(self, dispositivo_java):
-        self.mostrar_mensaje(f"Conectando a {dispositivo_java.getName()}...")
-        threading.Thread(target=self.conectar_a_dispositivo, args=(dispositivo_java,), daemon=True).start()
+    def iniciar_conexion(self, mac_dispositivo, nombre_dispositivo):
+        self.mostrar_mensaje(f"Conectando a {nombre_dispositivo}...")
+        # PASAMOS TEXTOS AL HILO SECUNDARIO, NO OBJETOS JAVA
+        threading.Thread(target=self.conectar_a_dispositivo, args=(mac_dispositivo, nombre_dispositivo), daemon=True).start()
 
-    def conectar_a_dispositivo(self, dispositivo_java):
+    def conectar_a_dispositivo(self, mac_dispositivo, nombre_dispositivo):
         try:
+            from jnius import autoclass
+            AdaptadorBluetooth = autoclass('android.bluetooth.BluetoothAdapter')
+            
+            # Pedimos el dispositivo a Android de forma segura desde dentro del hilo
+            dispositivo_java = AdaptadorBluetooth.getDefaultAdapter().getRemoteDevice(mac_dispositivo)
+            
             ClaseUUID = autoclass('java.util.UUID')
             uuid = ClaseUUID.fromString(UUID_PUERTO_SERIE)
-            self.socket_bt = dispositivo_java.createRfcommSocketToServiceRecord(uuid)
             
-            AdaptadorBluetooth = autoclass('android.bluetooth.BluetoothAdapter')
+            self.socket_bt = dispositivo_java.createRfcommSocketToServiceRecord(uuid)
             AdaptadorBluetooth.getDefaultAdapter().cancelDiscovery()
             
             self.socket_bt.connect()
             self.flujo_salida = self.socket_bt.getOutputStream()
             
-            # Usamos Clock.schedule_once para mostrar el toast desde un hilo secundario
-            Clock.schedule_once(lambda dt: self.mostrar_mensaje(f"¡Conectado a {dispositivo_java.getName()}!"))
+            Clock.schedule_once(lambda dt: self.mostrar_mensaje(f"¡Conectado a {nombre_dispositivo}!"))
             
             if self.ruta_archivo_seleccionado:
                 Clock.schedule_once(lambda dt: setattr(self.pantalla.ids.btn_enviar, 'disabled', False))
         except Exception as error:
-            Clock.schedule_once(lambda dt: self.mostrar_mensaje(f"Error de conexión: {str(error)}"))
+            Clock.schedule_once(lambda dt: self.mostrar_mensaje(f"Error al conectar: {str(error)}"))
             if self.socket_bt:
                 try: self.socket_bt.close()
                 except: pass
