@@ -123,38 +123,36 @@ class AplicacionCompartir(MDApp):
                 Intent = autoclass('android.content.Intent')
                 Uri = autoclass('android.net.Uri')
                 File = autoclass('java.io.File')
-                StrictMode = autoclass('android.os.StrictMode')
+                FileProvider = autoclass('androidx.core.content.FileProvider')
                 
-                # 1. Desactivamos la política estricta (permite file://)
-                builder = StrictMode.VmPolicy.Builder()
-                StrictMode.setVmPolicy(builder.build())
+                # 1. Obtener el contexto de la actividad
+                context = cast('android.content.Context', PythonActivity.mActivity)
                 
-                # 2. Obtenemos la URI de forma segura
+                # 2. Manejar la URI (content:// o ruta de archivo)
                 ruta_o_uri = str(self.uri_archivo_seleccionado)
                 
                 if ruta_o_uri.startswith("content://"):
-                    # Si ya es content URI, la usamos directamente
                     uri_android = Uri.parse(ruta_o_uri)
                 else:
-                    # Si es ruta de archivo, usamos Uri.fromFile (más robusto que concatenar)
+                    # Crear archivo Java y obtener URI con FileProvider
                     archivo_java = File(ruta_o_uri)
-                    uri_android = Uri.fromFile(archivo_java)
+                    authority = context.getPackageName() + '.fileprovider'
+                    uri_android = FileProvider.getUriForFile(context, authority, archivo_java)
                 
-                # 3. Configuramos el Intent
+                # 3. Configurar el Intent
                 intent = Intent()
                 intent.setAction(Intent.ACTION_SEND)
                 intent.setType("*/*")
                 intent.putExtra(Intent.EXTRA_STREAM, uri_android)
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 
-                # 4. Mostramos el selector nativo
+                # 4. Mostrar selector nativo
                 chooser = Intent.createChooser(intent, "Enviar por...")
                 actividad = cast('android.app.Activity', PythonActivity.mActivity)
                 actividad.startActivity(chooser)
                 
             except Exception as error:
                 toast(f"ERROR: {str(error)}")
-                # Para depuración, puedes imprimir el traceback completo en logcat
                 import traceback
                 traceback.print_exc()
         else:
