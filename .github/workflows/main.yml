@@ -12,7 +12,6 @@ jobs:
       - name: Descargar el código
         uses: actions/checkout@v4
 
-      # --- AQUÍ ESTÁ LA SOLUCIÓN MÁGICA DE JAVA 17 ---
       - name: Configurar Java 17 para Gradle
         uses: actions/setup-java@v4
         with:
@@ -37,5 +36,5 @@ jobs:
       - name: Guardar y subir el APK
         uses: actions/upload-artifact@v4
         with:
-          name: App-Bluetooth-APK
+          name: App-Compartir-APK
           path: bin/*.apk
