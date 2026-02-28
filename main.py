@@ -128,10 +128,9 @@ class AplicacionCompartir(MDApp):
                 uri_android = None
                 
                 if ruta_o_uri.startswith("content://"):
-                    # Ya es una content URI, la usamos directamente
                     uri_android = Uri.parse(ruta_o_uri)
                 else:
-                    # Intento 1: FileProvider oficial
+                    # Intentamos con FileProvider (requiere provider_paths.xml y dependencia)
                     try:
                         FileProvider = autoclass('androidx.core.content.FileProvider')
                         context = cast('android.content.Context', PythonActivity.mActivity)
@@ -139,26 +138,23 @@ class AplicacionCompartir(MDApp):
                         authority = context.getPackageName() + '.fileprovider'
                         uri_android = FileProvider.getUriForFile(context, authority, archivo_java)
                     except Exception as e:
-                        # Intento 2: Fallback con StrictMode si Buildozer falla con el provider
+                        # Fallback con StrictMode (solo por si acaso)
                         try:
                             StrictMode = autoclass('android.os.StrictMode')
                             builder = StrictMode.VmPolicy.Builder()
                             StrictMode.setVmPolicy(builder.build())
-                            
                             archivo_java = File(ruta_o_uri)
                             uri_android = Uri.fromFile(archivo_java)
                         except Exception as e2:
                             toast("No se pudo generar URI para el archivo")
                             return
                 
-                # Crear intent ACTION_SEND para abrir el menú nativo
                 intent = Intent()
                 intent.setAction(Intent.ACTION_SEND)
                 intent.setType("*/*")
                 intent.putExtra(Intent.EXTRA_STREAM, uri_android)
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 
-                # Mostrar selector nativo
                 chooser = Intent.createChooser(intent, "Enviar archivo por...")
                 actividad_actual = cast('android.app.Activity', PythonActivity.mActivity)
                 actividad_actual.startActivity(chooser)
