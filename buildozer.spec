@@ -1,9 +1,9 @@
 [app]
-title = App Bluetooth
-package.name = bluetoothapp
-package.domain = org.tu_nombre
+title = App Compartir
+package.name = compartirapp
+package.domain = org.edgardo
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,xml
 version = 0.1
 requirements = python3, kivy==2.3.0, kivymd==1.1.1, pyjnius, plyer, android
 android.permissions = BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_CONNECT, BLUETOOTH_SCAN, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, READ_EXTERNAL_STORAGE, READ_MEDIA_IMAGES
@@ -11,10 +11,9 @@ android.api = 33
 android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
 orientation = portrait
+android.add_src = provider_paths.xml
+android.gradle_dependencies = androidx.core:core:1.9.0
 
 [buildozer]
 log_level = 2
 warn_on_root = 1
-
-
-
