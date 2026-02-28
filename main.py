@@ -88,9 +88,9 @@ class AplicacionCompartir(MDApp):
 
     def on_permisos_result(self, permissions, results):
         if all(results):
-            self.actualizar_estado("Permisos concedidos")
+            self.actualizar_estado("Permisos listos")
         else:
-            toast("Faltan permisos necesarios. Revisa ajustes.")
+            toast("Faltan permisos. Revisa ajustes.")
 
     def actualizar_estado(self, texto):
         Clock.schedule_once(lambda dt: setattr(self.pantalla.ids.etiqueta_archivo, 'text', texto))
@@ -107,10 +107,10 @@ class AplicacionCompartir(MDApp):
     def al_seleccionar_archivo(self, seleccion):
         if seleccion and len(seleccion) > 0:
             self.uri_archivo_seleccionado = seleccion[0]
-            nombre = os.path.basename(self.uri_archivo_seleccionado)
+            nombre = os.path.basename(str(self.uri_archivo_seleccionado))
             Clock.schedule_once(lambda dt: setattr(self.pantalla.ids.etiqueta_archivo, 'text', f"Archivo: {nombre}"))
             Clock.schedule_once(lambda dt: setattr(self.pantalla.ids.btn_enviar, 'disabled', False))
-            toast("Archivo seleccionado")
+            toast("Archivo cargado")
 
     def compartir_archivo_nativo(self):
         if not self.uri_archivo_seleccionado:
@@ -123,46 +123,42 @@ class AplicacionCompartir(MDApp):
                 Intent = autoclass('android.content.Intent')
                 Uri = autoclass('android.net.Uri')
                 File = autoclass('java.io.File')
+                StrictMode = autoclass('android.os.StrictMode')
                 
-                ruta_o_uri = self.uri_archivo_seleccionado
-                uri_android = None
+                # 1. Desactivamos la política estricta (permite file://)
+                builder = StrictMode.VmPolicy.Builder()
+                StrictMode.setVmPolicy(builder.build())
+                
+                # 2. Obtenemos la URI de forma segura
+                ruta_o_uri = str(self.uri_archivo_seleccionado)
                 
                 if ruta_o_uri.startswith("content://"):
+                    # Si ya es content URI, la usamos directamente
                     uri_android = Uri.parse(ruta_o_uri)
                 else:
-                    # Intentamos con FileProvider (requiere provider_paths.xml y dependencia)
-                    try:
-                        FileProvider = autoclass('androidx.core.content.FileProvider')
-                        context = cast('android.content.Context', PythonActivity.mActivity)
-                        archivo_java = File(ruta_o_uri)
-                        authority = context.getPackageName() + '.fileprovider'
-                        uri_android = FileProvider.getUriForFile(context, authority, archivo_java)
-                    except Exception as e:
-                        # Fallback con StrictMode (solo por si acaso)
-                        try:
-                            StrictMode = autoclass('android.os.StrictMode')
-                            builder = StrictMode.VmPolicy.Builder()
-                            StrictMode.setVmPolicy(builder.build())
-                            archivo_java = File(ruta_o_uri)
-                            uri_android = Uri.fromFile(archivo_java)
-                        except Exception as e2:
-                            toast("No se pudo generar URI para el archivo")
-                            return
+                    # Si es ruta de archivo, usamos Uri.fromFile (más robusto que concatenar)
+                    archivo_java = File(ruta_o_uri)
+                    uri_android = Uri.fromFile(archivo_java)
                 
+                # 3. Configuramos el Intent
                 intent = Intent()
                 intent.setAction(Intent.ACTION_SEND)
                 intent.setType("*/*")
                 intent.putExtra(Intent.EXTRA_STREAM, uri_android)
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 
-                chooser = Intent.createChooser(intent, "Enviar archivo por...")
-                actividad_actual = cast('android.app.Activity', PythonActivity.mActivity)
-                actividad_actual.startActivity(chooser)
+                # 4. Mostramos el selector nativo
+                chooser = Intent.createChooser(intent, "Enviar por...")
+                actividad = cast('android.app.Activity', PythonActivity.mActivity)
+                actividad.startActivity(chooser)
                 
             except Exception as error:
-                toast(f"Error al enviar: {str(error)}")
+                toast(f"ERROR: {str(error)}")
+                # Para depuración, puedes imprimir el traceback completo en logcat
+                import traceback
+                traceback.print_exc()
         else:
-            toast("Modo PC: no se puede enviar realmente")
+            toast("Modo PC: no se puede enviar")
 
 if __name__ == '__main__':
     AplicacionCompartir().run()
