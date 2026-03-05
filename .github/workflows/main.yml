@@ -62,9 +62,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
-      - name: Compilar APK con Buildozer
+      - name: Aceptar licencias de Android automáticamente
         run: |
-          buildozer android debug
+          # Crear el directorio de licencias si no existe
+          mkdir -p ~/.android
+          # Aceptar todas las licencias (esto evita que Buildozer pregunte)
+          yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          # Si ANDROID_HOME no está definido, lo definimos
+          export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
+          yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+        continue-on-error: true
+
+      - name: Compilar APK con Buildozer (aceptando todo automáticamente)
+        run: |
+          # Forzar la aceptación de cualquier pregunta con "yes"
+          yes | buildozer android debug
 
       - name: Subir APK como artefacto
         uses: actions/upload-artifact@v4
