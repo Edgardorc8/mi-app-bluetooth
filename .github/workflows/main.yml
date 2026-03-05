@@ -3,38 +3,71 @@ name: Compilar APK de Kivy
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Descargar el código
+      - name: Checkout del código
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17 para Gradle
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Instalar Python
+      - name: Instalar Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar dependencias de Linux y Buildozer
+      - name: Instalar dependencias del sistema
         run: |
           sudo apt-get update
-          sudo apt-get install -y git zip unzip python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
-          pip install --user --upgrade buildozer "Cython==0.29.33" virtualenv
+          sudo apt-get install -y \
+            git \
+            zip \
+            unzip \
+            python3-pip \
+            autoconf \
+            libtool \
+            pkg-config \
+            zlib1g-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
+            libtinfo5 \
+            cmake \
+            libffi-dev \
+            libssl-dev \
+            wget \
+            build-essential
 
-      - name: Compilar la App a APK
+      - name: Instalar Cython y Buildozer
         run: |
-          yes | buildozer android debug
+          pip install --user --upgrade pip
+          pip install --user cython==0.29.33 buildozer
 
-      - name: Guardar y subir el APK
+      - name: Agregar ~/.local/bin al PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Cache de dependencias de Buildozer (Android SDK/NDK)
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            ${{ runner.os }}-buildozer-
+
+      - name: Compilar APK con Buildozer
+        run: |
+          buildozer android debug
+
+      - name: Subir APK como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: App-Compartir-APK
+          name: Bluetooth-Directo-APK
           path: bin/*.apk
