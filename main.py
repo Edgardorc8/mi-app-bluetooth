@@ -1,14 +1,15 @@
 """
 APLICACIÓN BLUETOOTH CLIENTE/SERVIDOR PARA ANDROID
 Envío y recepción de archivos por RFCOMM
+Versión mejorada con lista de dispositivos vinculados y transferencia funcional
 """
 import os
 import threading
 import traceback
+from datetime import datetime
 from kivy.lang import Builder
 from kivy.clock import Clock
 from kivy.utils import platform
-from kivy.uix.boxlayout import BoxLayout
 from kivymd.app import MDApp
 from kivymd.uix.button import MDRaisedButton, MDFlatButton
 from kivymd.uix.label import MDLabel
@@ -21,7 +22,8 @@ from kivymd.toast import toast
 # IMPORTACIONES ESPECÍFICAS DE ANDROID
 # =============================================================================
 if platform == 'android':
-    from android.permissions import request_permissions, Permission
+    from android.permissions import request_permissions, Permission, check_permission
+    from android import api_version
     from plyer import filechooser
     from jnius import autoclass, cast, JavaException
 else:
@@ -81,12 +83,14 @@ MDScreen:
                 text: "MODO SERVIDOR"
                 on_release: app.start_server_mode()
                 md_bg_color: app.theme_cls.primary_color
+                disabled: True
 
             MDRaisedButton:
                 id: btn_client
                 text: "MODO CLIENTE"
                 on_release: app.start_client_mode()
                 md_bg_color: app.theme_cls.primary_color
+                disabled: True
 
         ScrollView:
             MDList:
@@ -132,6 +136,7 @@ MDScreen:
             padding: "10dp"
 
             MDRectangleFlatButton:
+                id: btn_scan
                 text: "ESCANEAR"
                 on_release: app.scan_devices()
                 disabled: True
@@ -182,8 +187,6 @@ class AplicacionBluetoothDirecto(MDApp):
     # -------------------------------------------------------------------------
     def request_permissions(self):
         """Solicita todos los permisos necesarios según la versión de Android"""
-        from android import api_version
-
         permissions = [
             Permission.READ_EXTERNAL_STORAGE,
             Permission.READ_MEDIA_IMAGES,
@@ -197,8 +200,7 @@ class AplicacionBluetoothDirecto(MDApp):
                 Permission.BLUETOOTH_CONNECT,
                 Permission.BLUETOOTH_SCAN,
             ])
-            # Si no usas ubicación, puedes omitir ACCESS_FINE_LOCATION
-            # pero lo incluimos por si acaso
+            # No es obligatorio, pero por compatibilidad
             permissions.append(Permission.ACCESS_FINE_LOCATION)
         else:
             # Android 11 y anteriores
@@ -277,6 +279,7 @@ class AplicacionBluetoothDirecto(MDApp):
         self.screen.ids.btn_client.md_bg_color = self.theme_cls.primary_color
         self.screen.ids.btn_stop_server.disabled = False
         self.screen.ids.btn_select_file.disabled = True  # El servidor no selecciona archivo
+        self.screen.ids.btn_scan.disabled = True  # El servidor no escanea
 
         self.update_status("Servidor: Esperando conexión...")
         threading.Thread(target=self._server_thread, daemon=True).start()
@@ -315,14 +318,10 @@ class AplicacionBluetoothDirecto(MDApp):
         self.update_status("Servidor: Cliente conectado")
         toast("¡Cliente conectado!")
 
-        # Iniciar hilo de recepción
+        # Iniciar hilo de recepción (el servidor recibe archivos)
         self.connected_thread = threading.Thread(
             target=self._receive_file_thread, daemon=True)
         self.connected_thread.start()
-
-        # Habilitar el botón de selección de archivo? No, el servidor recibe
-        # El servidor no necesita enviar, pero podría enviar si quisiera
-        # Lo dejamos así por ahora
 
     def stop_server(self):
         """Detiene el servidor y cierra sockets"""
@@ -362,6 +361,7 @@ class AplicacionBluetoothDirecto(MDApp):
         self.screen.ids.btn_server.md_bg_color = self.theme_cls.primary_color
         self.screen.ids.btn_stop_server.disabled = True  # No aplica en cliente
         self.screen.ids.btn_select_file.disabled = False
+        self.screen.ids.btn_scan.disabled = False  # Habilitar escaneo
         self.screen.ids.device_list.clear_widgets()
 
         self.update_status("Cliente: Busca dispositivos")
@@ -375,6 +375,19 @@ class AplicacionBluetoothDirecto(MDApp):
 
         if not self.bluetooth_adapter:
             return
+
+        # Verificar permisos según API (opcional pero recomendado)
+        if platform == 'android':
+            if api_version >= 31:
+                if not check_permission(Permission.BLUETOOTH_CONNECT):
+                    toast("Permiso BLUETOOTH_CONNECT no concedido")
+                    self.request_permissions()
+                    return
+            else:
+                if not check_permission(Permission.BLUETOOTH):
+                    toast("Permiso BLUETOOTH no concedido")
+                    self.request_permissions()
+                    return
 
         self.update_status("Escaneando...")
         self.screen.ids.device_list.clear_widgets()
@@ -447,10 +460,8 @@ class AplicacionBluetoothDirecto(MDApp):
         # Habilitar botón de enviar
         self.screen.ids.btn_send.disabled = False
 
-        # Iniciar hilo de recepción (por si el servidor también envía algo)
-        self.connected_thread = threading.Thread(
-            target=self._receive_file_thread, daemon=True)
-        self.connected_thread.start()
+        # El cliente no inicia hilo de recepción porque solo envía archivos.
+        # Si se quisiera comunicación bidireccional, habría que iniciarlo.
 
     # -------------------------------------------------------------------------
     # SELECCIÓN DE ARCHIVO (Cliente)
@@ -533,7 +544,7 @@ class AplicacionBluetoothDirecto(MDApp):
         self.screen.ids.btn_send.disabled = False
 
     # -------------------------------------------------------------------------
-    # RECEPCIÓN DE ARCHIVO (Servidor o Cliente, por si acaso)
+    # RECEPCIÓN DE ARCHIVO (Solo para el servidor)
     # -------------------------------------------------------------------------
     def _receive_file_thread(self):
         """Hilo que escucha datos entrantes (para servidor)"""
@@ -544,10 +555,23 @@ class AplicacionBluetoothDirecto(MDApp):
             input_stream = self.client_socket.getInputStream()
             buffer = bytearray(CHUNK_SIZE)
 
-            # Crear archivo de destino
-            from datetime import datetime
+            # Determinar ruta de guardado (directorio de Descargas)
+            # Usamos getExternalFilesDir para no requerir permisos extra
+            if platform == 'android':
+                from android.os import Environment
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                context = PythonActivity.mActivity
+                # Directorio privado de la app en almacenamiento externo
+                files_dir = context.getExternalFilesDir(None).getAbsolutePath()
+                # Si prefieres Descargas (requiere permiso WRITE_EXTERNAL_STORAGE), usa:
+                # downloads_path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath()
+                # received_file_path = os.path.join(downloads_path, f"recibido_{timestamp}.bin")
+            else:
+                files_dir = "."  # directorio actual en PC
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            received_file_path = f"/sdcard/Download/recibido_{timestamp}.bin"
+            received_file_path = os.path.join(files_dir, f"recibido_{timestamp}.bin")
 
             with open(received_file_path, "wb") as f:
                 while True:
@@ -564,8 +588,9 @@ class AplicacionBluetoothDirecto(MDApp):
 
     def _on_receive_complete(self, file_path):
         """Se llama cuando se recibe un archivo completamente"""
-        self.update_status(f"Archivo recibido: {os.path.basename(file_path)}")
-        toast(f"Archivo guardado en Descargas")
+        file_name = os.path.basename(file_path)
+        self.update_status(f"Archivo recibido: {file_name}")
+        toast(f"Archivo guardado en {file_name}")
         # Podrías abrir el archivo con un Intent aquí
 
 # =============================================================================
